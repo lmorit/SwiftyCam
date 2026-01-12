@@ -658,8 +658,8 @@ open class SwiftyCamViewController: UIViewController {
        // begin configuring session
 
        session.beginConfiguration()
-       configureVideoPreset()
        addVideoInput()
+       configureVideoPreset()
        addAudioInput()
        configureVideoOutput()
        configurePhotoOutput()
@@ -671,8 +671,8 @@ open class SwiftyCamViewController: UIViewController {
 
    fileprivate func addInputs() {
        session.beginConfiguration()
-       configureVideoPreset()
        addVideoInput()
+       configureVideoPreset()
        addAudioInput()
        session.commitConfiguration()
    }
@@ -704,49 +704,50 @@ open class SwiftyCamViewController: UIViewController {
            videoDevice = SwiftyCamViewController.deviceWithMediaType(AVMediaType.video.rawValue, preferringPosition: .back)
        }
 
-       if let device = videoDevice {
-           do {
-               try device.lockForConfiguration()
-               if device.isFocusModeSupported(.continuousAutoFocus) {
-                   device.focusMode = .continuousAutoFocus
-                   if device.isSmoothAutoFocusSupported {
-                       device.isSmoothAutoFocusEnabled = true
-                   }
-               }
-
-               if device.isExposureModeSupported(.continuousAutoExposure) {
-                   device.exposureMode = .continuousAutoExposure
-               }
-
-               if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
-                   device.whiteBalanceMode = .continuousAutoWhiteBalance
-               }
-
-               if device.isLowLightBoostSupported && lowLightBoost == true {
-                   device.automaticallyEnablesLowLightBoostWhenAvailable = true
-               }
-
-               device.unlockForConfiguration()
-           } catch {
-               print("[SwiftyCam]: Error locking configuration")
-           }
+       guard let videoDevice = videoDevice else {
+           print("[SwiftyCam]: Could not find a video device")
+           setupResult = .configurationFailed
+           return
        }
 
        do {
-           if let videoDevice = videoDevice {
-               let videoDeviceInput = try AVCaptureDeviceInput(device: videoDevice)
-               if session.canAddInput(videoDeviceInput) {
-                   session.addInput(videoDeviceInput)
-                   self.videoDeviceInput = videoDeviceInput
-               } else {
-                   print("[SwiftyCam]: Could not add video device input to the session")
-                   print(session.canSetSessionPreset(AVCaptureSession.Preset(rawValue: videoInputPresetFromVideoQuality(quality: videoQuality))))
-                   setupResult = .configurationFailed
-                   session.commitConfiguration()
-                   return
+           try videoDevice.lockForConfiguration()
+           if videoDevice.isFocusModeSupported(.continuousAutoFocus) {
+               videoDevice.focusMode = .continuousAutoFocus
+               if videoDevice.isSmoothAutoFocusSupported {
+                   videoDevice.isSmoothAutoFocusEnabled = true
                }
            }
-           
+
+           if videoDevice.isExposureModeSupported(.continuousAutoExposure) {
+               videoDevice.exposureMode = .continuousAutoExposure
+           }
+
+           if videoDevice.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+               videoDevice.whiteBalanceMode = .continuousAutoWhiteBalance
+           }
+
+           if videoDevice.isLowLightBoostSupported && lowLightBoost == true {
+               videoDevice.automaticallyEnablesLowLightBoostWhenAvailable = true
+           }
+
+           videoDevice.unlockForConfiguration()
+       } catch {
+           print("[SwiftyCam]: Error locking configuration")
+       }
+
+       do {
+           let videoDeviceInput = try AVCaptureDeviceInput(device: videoDevice)
+           if session.canAddInput(videoDeviceInput) {
+               session.addInput(videoDeviceInput)
+               self.videoDeviceInput = videoDeviceInput
+           } else {
+               print("[SwiftyCam]: Could not add video device input to the session")
+               print(session.canSetSessionPreset(AVCaptureSession.Preset(rawValue: videoInputPresetFromVideoQuality(quality: videoQuality))))
+               setupResult = .configurationFailed
+               session.commitConfiguration()
+               return
+           }
        } catch {
            print("[SwiftyCam]: Could not create video device input: \(error)")
            setupResult = .configurationFailed
@@ -911,22 +912,34 @@ open class SwiftyCamViewController: UIViewController {
 
    fileprivate class func deviceWithMediaType(_ mediaType: String, preferringPosition position: AVCaptureDevice.Position) -> AVCaptureDevice? {
        if #available(iOS 10.0, *) {
-               let avDevice = AVCaptureDevice.default(AVCaptureDevice.DeviceType.builtInWideAngleCamera, for: AVMediaType(rawValue: mediaType), position: position)
-               return avDevice
+           let discovery = AVCaptureDevice.DiscoverySession(
+               deviceTypes: [.builtInWideAngleCamera],
+               mediaType: AVMediaType(rawValue: mediaType),
+               position: position
+           )
+           if let device = discovery.devices.first {
+               return device
+           }
+           let fallbackDiscovery = AVCaptureDevice.DiscoverySession(
+               deviceTypes: [.builtInWideAngleCamera],
+               mediaType: AVMediaType(rawValue: mediaType),
+               position: .unspecified
+           )
+           return fallbackDiscovery.devices.first
        } else {
-               // Fallback on earlier versions
-               let avDevice = AVCaptureDevice.devices(for: AVMediaType(rawValue: mediaType))
-               var avDeviceNum = 0
-               for device in avDevice {
-                       print("deviceWithMediaType Position: \(device.position.rawValue)")
-                       if device.position == position {
-                               break
-                       } else {
-                               avDeviceNum += 1
-                       }
+           // Fallback on earlier versions
+           let avDevice = AVCaptureDevice.devices(for: AVMediaType(rawValue: mediaType))
+           var avDeviceNum = 0
+           for device in avDevice {
+               print("deviceWithMediaType Position: \(device.position.rawValue)")
+               if device.position == position {
+                   break
+               } else {
+                   avDeviceNum += 1
                }
+           }
 
-               return avDevice[avDeviceNum]
+           return avDevice[avDeviceNum]
        }
 
        //return AVCaptureDevice.devices(for: AVMediaType(rawValue: mediaType), position: position).first
